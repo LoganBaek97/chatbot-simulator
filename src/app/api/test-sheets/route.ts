@@ -3,14 +3,19 @@ import { google } from "googleapis";
 
 // Google Sheets 클라이언트 초기화
 function getGoogleSheetsClient() {
-  let credentials = process.env.GOOGLE_SERVICE_ACCOUNT_KEY;
-  if (!credentials) {
-    throw new Error("Google Service Account 키가 설정되지 않았습니다.");
+  // Base64 인코딩된 환경변수 우선 사용
+  const base64Credentials = process.env.GOOGLE_SERVICE_ACCOUNT_KEY;
+
+  if (!base64Credentials) {
+    throw new Error(
+      "Google Service Account 키가 설정되지 않았습니다. GOOGLE_SERVICE_ACCOUNT_KEY 또는 GOOGLE_SERVICE_ACCOUNT_KEY를 설정하세요."
+    );
   }
 
   try {
-    // 이스케이프된 따옴표를 실제 따옴표로 변환
-    credentials = credentials.replace(/\\"/g, '"');
+    const credentials = Buffer.from(base64Credentials, "base64").toString(
+      "utf-8"
+    );
 
     // JSON 파싱 후 private_key의 개행문자 처리
     const parsedCredentials = JSON.parse(credentials);
@@ -31,14 +36,8 @@ function getGoogleSheetsClient() {
     return google.sheets({ version: "v4", auth });
   } catch (error: any) {
     console.error("Google Service Account 키 파싱 오류:", error);
-    console.error(
-      "원본 환경변수 값 길이:",
-      process.env.GOOGLE_SERVICE_ACCOUNT_KEY?.length
-    );
-    console.error(
-      "원본 환경변수 시작 부분:",
-      process.env.GOOGLE_SERVICE_ACCOUNT_KEY?.substring(0, 100)
-    );
+    console.error("Base64 환경변수 존재:", !!base64Credentials);
+
     throw new Error(`Google Service Account 키 파싱 실패: ${error.message}`);
   }
 }
@@ -64,6 +63,7 @@ export async function GET() {
     }
 
     const sheets = getGoogleSheetsClient();
+
     const spreadsheetId = process.env.GOOGLE_SHEET_ID;
     const testSheetName = "테스트시트";
     const timestamp = new Date().toLocaleString("ko-KR");
