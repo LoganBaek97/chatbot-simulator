@@ -60,8 +60,12 @@ async function callAzureOpenAI(messages: any[], maxTokens = 1000) {
 }
 
 export async function POST(request: NextRequest) {
-  const { chatbotSystemPrompt, userPersonaPrompt, stepPrompts } =
-    await request.json();
+  const {
+    chatbotSystemPrompt,
+    userPersonaPrompt,
+    stepPrompts,
+    debugMode = false,
+  } = await request.json();
 
   if (!chatbotSystemPrompt || !userPersonaPrompt || !stepPrompts) {
     return NextResponse.json(
@@ -91,6 +95,7 @@ export async function POST(request: NextRequest) {
           type: "start",
           message: "시뮬레이션을 시작합니다...",
           timestamp: new Date().toISOString(),
+          debugMode,
         });
 
         // 6단계 순차적으로 실행
@@ -204,6 +209,10 @@ export async function POST(request: NextRequest) {
             sendUpdate({
               type: "chatbot_response",
               ...chatbotEntry,
+              // 디버그 모드일 때 전체 데이터 포함, 아닐 때는 response_to_user만
+              displayData: debugMode
+                ? chatbotData
+                : { response_to_user: chatbotData.response_to_user },
             });
 
             // report 단계는 바로 종료
@@ -215,7 +224,7 @@ export async function POST(request: NextRequest) {
             const isStepComplete = chatbotData.is_step_complete;
 
             // 2. 사용자 페르소나가 응답 생성
-            const userPrompt = `다음은 AI 상담가가 너에게 한 말이야: "${chatbotData.response_to_user}"\n\n이에 대해 자연스럽고 솔직하게 답변해줘. 너의 페르소나에 맞게 2-3문장 정도로 대답해.`;
+            const userPrompt = `다음은 AI 상담가가 너에게 한 말이야: "${chatbotData.response_to_user}". 너의 페르소나에 맞게 대답해.`;
 
             // userPrompt 유효성 검사
             if (!userPrompt || userPrompt.trim().length === 0) {

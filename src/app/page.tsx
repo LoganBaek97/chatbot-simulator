@@ -141,6 +141,7 @@ export default function Home() {
           chatbotSystemPrompt: systemPrompt,
           userPersonaPrompt: userPersonaPrompt,
           stepPrompts: stepPrompts,
+          debugMode: true,
         }),
       });
 
