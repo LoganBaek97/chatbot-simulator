@@ -170,7 +170,7 @@ export async function saveSimulationToGoogleSheets(simulationData: {
     await ensureSimulationSheetExists(sheets, spreadsheetId, sheetName);
 
     // 헤더 행 추가
-    const headers = ["단계", "턴", "화자", "메시지", "시간"];
+    const headers = ["단계", "메시지", "추론", "단계완료여부", "시간"];
     await sheets.spreadsheets.values.update({
       spreadsheetId,
       range: `${sheetName}!A1:E1`,
@@ -183,19 +183,37 @@ export async function saveSimulationToGoogleSheets(simulationData: {
     // 대화 데이터 변환
     const conversationRows = simulationData.conversation.map((entry) => {
       let message = "";
+      let reasoning = "";
+      let isStepComplete = "";
+
       if (typeof entry.message === "object" && entry.message.response_to_user) {
+        // 챗봇 메시지인 경우 모든 필드 추출
         message = entry.message.response_to_user;
+        reasoning = entry.message.reasoning || "";
+        isStepComplete =
+          entry.message.is_step_complete !== undefined
+            ? entry.message.is_step_complete
+              ? "예"
+              : "아니오"
+            : "";
       } else if (typeof entry.message === "string") {
+        // 사용자 메시지인 경우
         message = entry.message;
+        reasoning = ""; // 사용자 메시지는 추론 없음
+        isStepComplete = ""; // 사용자 메시지는 단계완료여부 없음
       } else {
+        // 기타 경우
         message = JSON.stringify(entry.message);
+        reasoning = "";
+        isStepComplete = "";
       }
 
       return [
-        entry.step,
-        entry.turn,
+        `${entry.step}-${entry.turn}`,
         entry.speaker === "chatbot" ? "🤖 챗봇" : "🧑‍💻 사용자",
         message,
+        reasoning,
+        isStepComplete,
         new Date(entry.timestamp).toLocaleString("ko-KR"),
       ];
     });

@@ -186,7 +186,11 @@ export async function POST(request: NextRequest) {
             });
 
             // 챗봇 응답을 JSON으로 파싱 시도
-            let chatbotData;
+            let chatbotData: {
+              reasoning: string;
+              is_step_complete: boolean;
+              response_to_user: string;
+            };
             try {
               chatbotData = JSON.parse(chatbotResponse || "{}");
             } catch (e) {
