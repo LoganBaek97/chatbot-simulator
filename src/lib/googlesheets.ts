@@ -200,26 +200,26 @@ export async function saveSimulationToGoogleSheets(simulationData: {
       ];
     });
 
-    // 대화 데이터 추가
+    // 대화 데이터 추가 (RAW 옵션으로 수식 파싱 방지)
     if (conversationRows.length > 0) {
       await sheets.spreadsheets.values.append({
         spreadsheetId,
         range: `${sheetName}!A:E`,
-        valueInputOption: "USER_ENTERED",
+        valueInputOption: "RAW",
         requestBody: {
           values: conversationRows,
         },
       });
     }
 
-    // 프롬프트 정보를 별도 섹션에 추가
+    // 프롬프트 정보를 별도 섹션에 추가 (등호를 피해서 수식 파싱 오류 방지)
     const promptData = [
       [""], // 빈 행
-      ["=== 설정 정보 ==="],
+      ["━━━━━━━━━ 설정 정보 ━━━━━━━━━"],
       ["챗봇 시스템 프롬프트:", simulationData.prompts.chatbotSystemPrompt],
       ["사용자 페르소나 프롬프트:", simulationData.prompts.userPersonaPrompt],
       [""], // 빈 행
-      ["=== 단계별 프롬프트 ==="],
+      ["━━━━━━━━━ 단계별 프롬프트 ━━━━━━━━━"],
     ];
 
     // 단계별 프롬프트 추가
@@ -229,11 +229,11 @@ export async function saveSimulationToGoogleSheets(simulationData: {
       }
     );
 
-    // 프롬프트 데이터 추가
+    // 프롬프트 데이터 추가 (RAW 옵션으로 수식 파싱 방지)
     await sheets.spreadsheets.values.append({
       spreadsheetId,
       range: `${sheetName}!A:E`,
-      valueInputOption: "USER_ENTERED",
+      valueInputOption: "RAW",
       requestBody: {
         values: promptData,
       },

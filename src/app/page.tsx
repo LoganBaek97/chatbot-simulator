@@ -430,16 +430,6 @@ export default function Home() {
         </p>
       )}
 
-      {/* 결과가 없을 때 안내 메시지 */}
-      {!result && !isLoading && (
-        <div className="mt-6 p-4 bg-gray-50 border border-gray-200 rounded-md text-center">
-          <p className="text-gray-600">
-            시뮬레이션을 먼저 실행하시면 결과를 Google Sheets에 저장할 수
-            있습니다.
-          </p>
-        </div>
-      )}
-
       {result && result.length > 0 && (
         <div className="result-section">
           <h2 className="text-2xl font-bold mb-4">📝 시뮬레이션 결과</h2>
