@@ -2,9 +2,6 @@ import { NextRequest, NextResponse } from "next/server";
 import { AzureOpenAI } from "openai";
 import { saveSimulationToGoogleSheets } from "@/lib/googlesheets";
 
-// Vercel timeout 설정 (10분)
-export const maxDuration = 600;
-
 const openai = new AzureOpenAI({
   apiVersion: process.env.OPENAI_API_VERSION || "2024-08-01-preview",
   endpoint: process.env.AZURE_OPENAI_ENDPOINT,
