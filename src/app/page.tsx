@@ -78,6 +78,11 @@ export default function Home() {
   const [useStreaming, setUseStreaming] = useState(true);
   const streamContainerRef = useRef<HTMLDivElement>(null);
 
+  // Google Sheets 테스트 관련 상태 추가
+  const [sheetsTestResult, setSheetsTestResult] = useState<any>(null);
+  const [sheetsTestLoading, setSheetsTestLoading] = useState(false);
+  const [sheetsTestError, setSheetsTestError] = useState("");
+
   useEffect(() => {
     if (streamContainerRef.current) {
       streamContainerRef.current.scrollTop =
@@ -294,6 +299,40 @@ export default function Home() {
     }
   };
 
+  // Google Sheets 연결 테스트 함수
+  const handleTestGoogleSheets = async (
+    testType: "simple" | "full" = "simple"
+  ) => {
+    setSheetsTestLoading(true);
+    setSheetsTestError("");
+    setSheetsTestResult(null);
+
+    try {
+      const endpoint =
+        testType === "simple" ? "/api/test-sheets" : "/api/test-sheets";
+      const method = testType === "simple" ? "POST" : "GET";
+
+      const response = await fetch(endpoint, {
+        method,
+        headers: {
+          "Content-Type": "application/json",
+        },
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || `HTTP 오류! 상태: ${response.status}`);
+      }
+
+      setSheetsTestResult(data);
+    } catch (error: any) {
+      setSheetsTestError(`Google Sheets 테스트 실패: ${error.message}`);
+    } finally {
+      setSheetsTestLoading(false);
+    }
+  };
+
   const handleDownload = () => {
     if (!result) return;
     const blob = new Blob([JSON.stringify(result, null, 2)], {
@@ -388,6 +427,120 @@ export default function Home() {
           ? "🚀 스트리밍 시뮬레이션 시작"
           : "📊 클래식 시뮬레이션 시작"}
       </button>
+
+      {/* Google Sheets 테스트 섹션 */}
+      <div className="mt-6 p-4 bg-gray-50 border border-gray-200 rounded-md">
+        <h3 className="text-lg font-semibold mb-3">
+          📊 Google Sheets 연결 테스트
+        </h3>
+        <p className="text-sm text-gray-600 mb-4">
+          시뮬레이션 결과가 Google Sheets에 정상적으로 저장되는지
+          테스트해보세요.
+        </p>
+
+        <div className="flex gap-3 mb-4">
+          <button
+            onClick={() => handleTestGoogleSheets("simple")}
+            disabled={sheetsTestLoading || isLoading}
+            className="py-2 px-4 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {sheetsTestLoading ? "테스트 중..." : "🔍 간단 테스트"}
+          </button>
+          <button
+            onClick={() => handleTestGoogleSheets("full")}
+            disabled={sheetsTestLoading || isLoading}
+            className="py-2 px-4 bg-orange-600 text-white rounded-md hover:bg-orange-700 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {sheetsTestLoading ? "테스트 중..." : "📝 전체 테스트"}
+          </button>
+        </div>
+
+        {/* 테스트 결과 표시 */}
+        {sheetsTestError && (
+          <div className="p-3 bg-red-50 border border-red-200 rounded-md text-red-700">
+            <h4 className="font-medium mb-1">❌ 테스트 실패</h4>
+            <p className="text-sm">{sheetsTestError}</p>
+          </div>
+        )}
+
+        {sheetsTestResult && (
+          <div
+            className={`p-3 border rounded-md ${
+              sheetsTestResult.success
+                ? "bg-green-50 border-green-200"
+                : "bg-red-50 border-red-200"
+            }`}
+          >
+            <h4
+              className={`font-medium mb-2 ${
+                sheetsTestResult.success ? "text-green-700" : "text-red-700"
+              }`}
+            >
+              {sheetsTestResult.success ? "✅ 테스트 성공" : "❌ 테스트 실패"}
+            </h4>
+
+            <p
+              className={`text-sm mb-3 ${
+                sheetsTestResult.success ? "text-green-600" : "text-red-600"
+              }`}
+            >
+              {sheetsTestResult.message}
+            </p>
+
+            {sheetsTestResult.success && sheetsTestResult.details && (
+              <div className="text-xs text-gray-600 space-y-1">
+                {sheetsTestResult.details.spreadsheetTitle && (
+                  <div>
+                    📄 스프레드시트: {sheetsTestResult.details.spreadsheetTitle}
+                  </div>
+                )}
+                {sheetsTestResult.details.url && (
+                  <div>
+                    🔗 링크:{" "}
+                    <a
+                      href={sheetsTestResult.details.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-blue-600 hover:text-blue-800 underline"
+                    >
+                      Google Sheets에서 보기
+                    </a>
+                  </div>
+                )}
+                {sheetsTestResult.details.timestamp && (
+                  <div>
+                    ⏰ 테스트 시간: {sheetsTestResult.details.timestamp}
+                  </div>
+                )}
+                {sheetsTestResult.details.testSheetCreated !== undefined && (
+                  <div>
+                    📋 테스트 시트:{" "}
+                    {sheetsTestResult.details.testSheetCreated
+                      ? "새로 생성됨"
+                      : "기존 시트 사용"}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {sheetsTestResult.config && (
+              <div className="text-xs text-gray-600 mt-2 pt-2 border-t border-gray-300">
+                <div>환경 설정:</div>
+                <div>
+                  • Sheet ID:{" "}
+                  {sheetsTestResult.config.hasSheetId ? "✅ 설정됨" : "❌ 없음"}
+                </div>
+                <div>
+                  • Service Key:{" "}
+                  {sheetsTestResult.config.hasServiceKey
+                    ? "✅ 설정됨"
+                    : "❌ 없음"}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
 
       {/* 실시간 진행 상황 표시 */}
       {isLoading && (
