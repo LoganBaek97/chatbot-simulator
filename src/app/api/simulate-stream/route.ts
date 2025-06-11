@@ -88,18 +88,43 @@ export async function POST(request: NextRequest) {
         // 진행 상황을 실시간으로 전송
         const sendUpdate = (data: any) => {
           try {
+            // controller가 닫혔는지 확인
+            if (controller.desiredSize === null) {
+              console.warn("Controller is already closed, skipping update");
+              return;
+            }
+
             const jsonString = JSON.stringify(data);
             const chunk = `data: ${jsonString}\n\n`;
             controller.enqueue(new TextEncoder().encode(chunk));
           } catch (error) {
-            console.error("JSON 직렬화 오류:", error);
-            // 직렬화 오류가 발생하면 에러 정보만 전송
-            const errorChunk = `data: ${JSON.stringify({
-              type: "error",
-              error: "데이터 직렬화 오류",
-              timestamp: new Date().toISOString(),
-            })}\n\n`;
-            controller.enqueue(new TextEncoder().encode(errorChunk));
+            console.error("sendUpdate 오류:", error);
+            // controller가 이미 닫힌 경우 더 이상 시도하지 않음
+            if (error instanceof Error && error.message.includes("closed")) {
+              console.warn(
+                "Controller가 이미 닫혔습니다. 더 이상 업데이트를 시도하지 않습니다."
+              );
+              return;
+            }
+
+            // JSON 직렬화 오류인 경우에만 재시도
+            if (
+              error instanceof Error &&
+              error.name === "TypeError" &&
+              !error.message.includes("closed") &&
+              controller.desiredSize !== null
+            ) {
+              try {
+                const errorChunk = `data: ${JSON.stringify({
+                  type: "error",
+                  error: "데이터 직렬화 오류",
+                  timestamp: new Date().toISOString(),
+                })}\n\n`;
+                controller.enqueue(new TextEncoder().encode(errorChunk));
+              } catch (secondError) {
+                console.error("에러 메시지 전송 실패:", secondError);
+              }
+            }
           }
         };
 
@@ -362,21 +387,36 @@ export async function POST(request: NextRequest) {
       } catch (error: any) {
         console.error("스트리밍 시뮬레이션 오류:", error);
 
-        const errorUpdate = {
-          type: "error",
-          error: `시뮬레이션 중 오류가 발생했습니다: ${error.message}`,
-          details: {
-            name: error.name,
-            message: error.message,
-            stack: error.stack?.slice(0, 500), // 스택 트레이스 일부만 포함
-            timestamp: new Date().toISOString(),
-          },
-          timestamp: new Date().toISOString(),
-        };
+        // controller가 아직 열려있는 경우에만 에러 메시지 전송
+        if (controller.desiredSize !== null) {
+          try {
+            const errorUpdate = {
+              type: "error",
+              error: `시뮬레이션 중 오류가 발생했습니다: ${error.message}`,
+              details: {
+                name: error.name,
+                message: error.message,
+                stack: error.stack?.slice(0, 500), // 스택 트레이스 일부만 포함
+                timestamp: new Date().toISOString(),
+              },
+              timestamp: new Date().toISOString(),
+            };
 
-        const chunk = `data: ${JSON.stringify(errorUpdate)}\n\n`;
-        controller.enqueue(new TextEncoder().encode(chunk));
-        controller.close();
+            const chunk = `data: ${JSON.stringify(errorUpdate)}\n\n`;
+            controller.enqueue(new TextEncoder().encode(chunk));
+          } catch (enqueueError) {
+            console.error("에러 메시지 전송 실패:", enqueueError);
+          }
+        } else {
+          console.warn(
+            "Controller가 이미 닫혀서 에러 메시지를 전송할 수 없습니다."
+          );
+        }
+
+        // controller가 아직 열려있는 경우에만 닫기
+        if (controller.desiredSize !== null) {
+          controller.close();
+        }
       }
     },
   });
