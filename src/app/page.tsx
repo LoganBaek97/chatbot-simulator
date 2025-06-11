@@ -219,6 +219,9 @@ export default function Home() {
                 case "error":
                   setError(data.error);
                   setCurrentStatus("❌ 오류가 발생했습니다");
+                  if (data.details) {
+                    console.error("시뮬레이션 오류 상세:", data.details);
+                  }
                   break;
               }
             } catch (parseError) {
@@ -236,6 +239,25 @@ export default function Home() {
   };
 
   const handleSimulate = () => {
+    // 기본 유효성 검사
+    if (!systemPrompt.trim()) {
+      setError("AI 챗봇 시스템 프롬프트를 입력해주세요.");
+      return;
+    }
+
+    if (!userPersonaPrompt.trim()) {
+      setError("사용자 페르소나 프롬프트를 입력해주세요.");
+      return;
+    }
+
+    // stepPrompts 유효성 검사
+    for (const step of conversationSteps) {
+      if (!stepPrompts[step] || !stepPrompts[step].trim()) {
+        setError(`${step} 단계의 프롬프트를 입력해주세요.`);
+        return;
+      }
+    }
+
     if (useStreaming) {
       handleSimulateStreaming();
     } else {

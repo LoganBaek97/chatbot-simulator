@@ -23,13 +23,36 @@ const conversationSteps = [
 // Azure OpenAI 호출 함수
 async function callAzureOpenAI(messages: any[], maxTokens = 1000) {
   try {
+    // 메시지 유효성 검사
+    const validMessages = messages.filter((msg) => {
+      return (
+        msg &&
+        typeof msg === "object" &&
+        msg.role &&
+        msg.content &&
+        typeof msg.content === "string" &&
+        msg.content.trim().length > 0
+      );
+    });
+
+    if (validMessages.length === 0) {
+      throw new Error("유효한 메시지가 없습니다.");
+    }
+
     const response = await openai.chat.completions.create({
       model: process.env.AZURE_OPENAI_DEPLOYMENT_NAME || "gpt-4",
-      messages: messages,
+      messages: validMessages,
       max_tokens: maxTokens,
       temperature: 0.7,
     });
-    return response.choices[0].message.content;
+
+    const content = response.choices[0]?.message?.content;
+    // console.log({ content });
+    if (!content || typeof content !== "string") {
+      throw new Error("Azure OpenAI로부터 유효한 응답을 받지 못했습니다.");
+    }
+
+    return content;
   } catch (error) {
     console.error("Azure OpenAI 호출 오류:", error);
     throw error;
@@ -79,6 +102,20 @@ export async function POST(request: NextRequest) {
           const currentStep = conversationSteps[stepIndex];
           const stepPrompt = stepPrompts[currentStep];
 
+          // stepPrompt 유효성 검사
+          if (
+            !stepPrompt ||
+            typeof stepPrompt !== "string" ||
+            stepPrompt.trim().length === 0
+          ) {
+            sendUpdate({
+              type: "error",
+              error: `${currentStep} 단계의 프롬프트가 유효하지 않습니다.`,
+              timestamp: new Date().toISOString(),
+            });
+            continue;
+          }
+
           sendUpdate({
             type: "step_start",
             step: currentStep,
@@ -90,7 +127,7 @@ export async function POST(request: NextRequest) {
           // 챗봇에게 단계별 임무 부여
           const taskMessage = {
             role: "user",
-            content: stepPrompt,
+            content: stepPrompt.trim(),
           };
           chatbotHistory.push(taskMessage);
 
@@ -111,9 +148,24 @@ export async function POST(request: NextRequest) {
 
             // 1. 챗봇이 응답 생성
             const chatbotResponse = await callAzureOpenAI(chatbotHistory, 1500);
+
+            // 챗봇 응답 유효성 검사
+            if (
+              !chatbotResponse ||
+              typeof chatbotResponse !== "string" ||
+              chatbotResponse.trim().length === 0
+            ) {
+              sendUpdate({
+                type: "error",
+                error: `${currentStep} 단계에서 챗봇 응답이 유효하지 않습니다.`,
+                timestamp: new Date().toISOString(),
+              });
+              break;
+            }
+
             chatbotHistory.push({
               role: "assistant",
-              content: chatbotResponse,
+              content: chatbotResponse.trim(),
             });
 
             // 챗봇 응답을 JSON으로 파싱 시도
@@ -124,8 +176,18 @@ export async function POST(request: NextRequest) {
               chatbotData = {
                 reasoning: "JSON 형식이 아닌 응답",
                 is_step_complete: false,
-                response_to_user: chatbotResponse,
+                response_to_user: chatbotResponse.trim(),
               };
+            }
+
+            // response_to_user 유효성 검사
+            if (
+              !chatbotData.response_to_user ||
+              typeof chatbotData.response_to_user !== "string" ||
+              chatbotData.response_to_user.trim().length === 0
+            ) {
+              chatbotData.response_to_user =
+                chatbotResponse.trim() || "응답을 생성할 수 없습니다.";
             }
 
             // 대화 로그에 추가
@@ -155,16 +217,44 @@ export async function POST(request: NextRequest) {
             // 2. 사용자 페르소나가 응답 생성
             const userPrompt = `다음은 AI 상담가가 너에게 한 말이야: "${chatbotData.response_to_user}"\n\n이에 대해 자연스럽고 솔직하게 답변해줘. 너의 페르소나에 맞게 2-3문장 정도로 대답해.`;
 
-            userHistory.push({ role: "user", content: userPrompt });
+            // userPrompt 유효성 검사
+            if (!userPrompt || userPrompt.trim().length === 0) {
+              sendUpdate({
+                type: "error",
+                error: `${currentStep} 단계에서 사용자 프롬프트 생성에 실패했습니다.`,
+                timestamp: new Date().toISOString(),
+              });
+              break;
+            }
+
+            userHistory.push({ role: "user", content: userPrompt.trim() });
             const userResponse = await callAzureOpenAI(userHistory, 500);
-            userHistory.push({ role: "assistant", content: userResponse });
+
+            // 사용자 응답 유효성 검사
+            if (
+              !userResponse ||
+              typeof userResponse !== "string" ||
+              userResponse.trim().length === 0
+            ) {
+              sendUpdate({
+                type: "error",
+                error: `${currentStep} 단계에서 사용자 응답이 유효하지 않습니다.`,
+                timestamp: new Date().toISOString(),
+              });
+              break;
+            }
+
+            userHistory.push({
+              role: "assistant",
+              content: userResponse.trim(),
+            });
 
             // 대화 로그에 추가
             const userEntry = {
               step: currentStep,
               turn: turnCount,
               speaker: "user",
-              message: userResponse,
+              message: userResponse.trim(),
               timestamp: new Date().toISOString(),
             };
             conversation.push(userEntry);
@@ -176,7 +266,7 @@ export async function POST(request: NextRequest) {
             });
 
             // 3. 사용자 응답을 챗봇 히스토리에 추가
-            chatbotHistory.push({ role: "user", content: userResponse });
+            chatbotHistory.push({ role: "user", content: userResponse.trim() });
 
             if (isStepComplete) {
               stepCompleted = true;
@@ -249,7 +339,13 @@ export async function POST(request: NextRequest) {
 
         const errorUpdate = {
           type: "error",
-          error: "시뮬레이션 중 오류가 발생했습니다: " + error.message,
+          error: `시뮬레이션 중 오류가 발생했습니다: ${error.message}`,
+          details: {
+            name: error.name,
+            message: error.message,
+            stack: error.stack?.slice(0, 500), // 스택 트레이스 일부만 포함
+            timestamp: new Date().toISOString(),
+          },
           timestamp: new Date().toISOString(),
         };
 
