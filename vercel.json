@@ -1,0 +1,7 @@
+{
+  "functions": {
+    "src/app/api/simulate/route.ts": {
+      "maxDuration": 300
+    }
+  }
+}

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 
 // 단계별 프롬프트의 기본 템플릿
 const INITIAL_STEP_PROMPTS = {
@@ -67,15 +67,36 @@ export default function Home() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
   const [backupInfo, setBackupInfo] = useState<any>(null);
+  const [streamingData, setStreamingData] = useState<any[]>([]);
+  const [currentStatus, setCurrentStatus] = useState<string>("");
+  const [progress, setProgress] = useState<{
+    currentStep: string;
+    stepIndex: number;
+    totalSteps: number;
+    turn: number;
+  } | null>(null);
+  const [useStreaming, setUseStreaming] = useState(true);
+  const streamContainerRef = useRef<HTMLDivElement>(null);
+
+  // 스트리밍 데이터가 업데이트될 때마다 자동 스크롤
+  useEffect(() => {
+    if (streamContainerRef.current) {
+      streamContainerRef.current.scrollTop =
+        streamContainerRef.current.scrollHeight;
+    }
+  }, [streamingData]);
 
   const handleStepPromptChange = (step: string, value: string) => {
     setStepPrompts((prev: any) => ({ ...prev, [step]: value }));
   };
 
-  const handleSimulate = async () => {
+  const handleSimulateClassic = async () => {
     setIsLoading(true);
     setError("");
     setResult(null);
+    setStreamingData([]);
+    setCurrentStatus("");
+    setProgress(null);
 
     try {
       const response = await fetch("/api/simulate", {
@@ -100,6 +121,126 @@ export default function Home() {
       setError(`결과 생성 실패: ${err.message}`);
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const handleSimulateStreaming = async () => {
+    setIsLoading(true);
+    setError("");
+    setResult(null);
+    setStreamingData([]);
+    setCurrentStatus("");
+    setProgress(null);
+
+    try {
+      const response = await fetch("/api/simulate-stream", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          chatbotSystemPrompt: systemPrompt,
+          userPersonaPrompt: userPersonaPrompt,
+          stepPrompts: stepPrompts,
+        }),
+      });
+
+      if (!response.ok) throw new Error(`HTTP 에러! 상태: ${response.status}`);
+
+      const reader = response.body?.getReader();
+      const decoder = new TextDecoder();
+
+      if (!reader) {
+        throw new Error("스트림 리더를 가져올 수 없습니다.");
+      }
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        const chunk = decoder.decode(value);
+        const lines = chunk.split("\n");
+
+        for (const line of lines) {
+          if (line.startsWith("data: ")) {
+            try {
+              const data = JSON.parse(line.slice(6));
+
+              switch (data.type) {
+                case "start":
+                  setCurrentStatus("🚀 시뮬레이션을 시작합니다...");
+                  break;
+
+                case "step_start":
+                  setCurrentStatus(`📝 ${data.step} 단계 진행 중...`);
+                  setProgress({
+                    currentStep: data.step,
+                    stepIndex: data.stepIndex,
+                    totalSteps: data.totalSteps,
+                    turn: 0,
+                  });
+                  break;
+
+                case "turn_start":
+                  setCurrentStatus(
+                    `💬 ${data.step} 단계 - ${data.turn}번째 대화 중...`
+                  );
+                  setProgress((prev) =>
+                    prev ? { ...prev, turn: data.turn } : null
+                  );
+                  break;
+
+                case "chatbot_response":
+                  setStreamingData((prev) => [...prev, data]);
+                  setCurrentStatus(`🤖 챗봇이 응답했습니다`);
+                  break;
+
+                case "user_response":
+                  setStreamingData((prev) => [...prev, data]);
+                  setCurrentStatus(`👤 사용자가 응답했습니다`);
+                  break;
+
+                case "step_complete":
+                  setCurrentStatus(`✅ ${data.step} 단계 완료`);
+                  break;
+
+                case "saving":
+                  setCurrentStatus(
+                    "💾 Google Sheets에 결과를 저장하고 있습니다..."
+                  );
+                  break;
+
+                case "complete":
+                  setCurrentStatus("🎉 시뮬레이션이 완료되었습니다!");
+                  setResult(data.conversation);
+                  setBackupInfo(data.backup);
+                  setProgress(null);
+                  break;
+
+                case "error":
+                  setError(data.error);
+                  setCurrentStatus("❌ 오류가 발생했습니다");
+                  break;
+              }
+            } catch (parseError) {
+              console.error("JSON 파싱 오류:", parseError);
+            }
+          }
+        }
+      }
+    } catch (err: any) {
+      setError(`결과 생성 실패: ${err.message}`);
+      setCurrentStatus("❌ 오류가 발생했습니다");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleSimulate = () => {
+    if (useStreaming) {
+      handleSimulateStreaming();
+    } else {
+      handleSimulateClassic();
     }
   };
 
@@ -162,13 +303,125 @@ export default function Home() {
         </div>
       </div>
 
+      {/* 스트리밍 모드 선택 */}
+      <div className="mb-4 p-4 bg-gray-50 border border-gray-200 rounded-md">
+        <div className="flex items-center justify-between">
+          <div>
+            <h3 className="font-medium text-gray-800">실행 모드 선택</h3>
+            <p className="text-sm text-gray-600">
+              {useStreaming
+                ? "🔴 스트리밍 모드: 실시간 진행 상황 확인 가능 (권장)"
+                : "⚪ 클래식 모드: 완료 후 전체 결과 표시"}
+            </p>
+          </div>
+          <label className="relative inline-flex items-center cursor-pointer">
+            <input
+              type="checkbox"
+              className="sr-only peer"
+              checked={useStreaming}
+              onChange={(e) => setUseStreaming(e.target.checked)}
+              disabled={isLoading}
+            />
+            <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+          </label>
+        </div>
+      </div>
+
       <button
         onClick={handleSimulate}
         disabled={isLoading}
         className="w-full py-3 px-6 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed font-semibold text-lg"
       >
-        {isLoading ? "생성 중..." : "결과물 생성하기"}
+        {isLoading
+          ? "생성 중..."
+          : useStreaming
+          ? "🚀 스트리밍 시뮬레이션 시작"
+          : "📊 클래식 시뮬레이션 시작"}
       </button>
+
+      {/* 실시간 진행 상황 표시 */}
+      {isLoading && (
+        <div className="mt-6 p-4 bg-blue-50 border border-blue-200 rounded-md">
+          <div className="flex items-center space-x-2 mb-3">
+            <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-blue-600"></div>
+            <span className="font-medium text-blue-800">
+              {useStreaming
+                ? "스트리밍 시뮬레이션 진행 중"
+                : "클래식 시뮬레이션 진행 중 (완료까지 기다려주세요)"}
+            </span>
+          </div>
+
+          {progress && useStreaming && (
+            <div className="mb-3">
+              <div className="flex justify-between text-sm text-gray-600 mb-1">
+                <span>{progress.currentStep} 단계</span>
+                <span>
+                  {progress.stepIndex}/{progress.totalSteps}
+                </span>
+              </div>
+              <div className="w-full bg-gray-200 rounded-full h-2">
+                <div
+                  className="bg-blue-600 h-2 rounded-full transition-all duration-300"
+                  style={{
+                    width: `${
+                      (progress.stepIndex / progress.totalSteps) * 100
+                    }%`,
+                  }}
+                ></div>
+              </div>
+              {progress.turn > 0 && (
+                <div className="text-xs text-gray-500 mt-1">
+                  {progress.turn}번째 대화
+                </div>
+              )}
+            </div>
+          )}
+
+          <div className="text-sm text-gray-700">{currentStatus}</div>
+        </div>
+      )}
+
+      {/* 실시간 대화 스트림 */}
+      {streamingData.length > 0 && useStreaming && (
+        <div className="mt-6">
+          <h3 className="text-lg font-semibold mb-3">🔴 실시간 대화 스트림</h3>
+          <div
+            ref={streamContainerRef}
+            className="max-h-96 overflow-y-auto border border-gray-300 rounded-md p-3 bg-gray-50 scroll-smooth"
+          >
+            {streamingData.map((entry: any, index: number) => {
+              let displayMessage;
+              if (
+                typeof entry.message === "object" &&
+                entry.message.response_to_user
+              ) {
+                displayMessage = entry.message.response_to_user;
+              } else if (typeof entry.message === "string") {
+                displayMessage = entry.message;
+              } else {
+                displayMessage = JSON.stringify(entry.message);
+              }
+
+              return (
+                <div
+                  key={index}
+                  className={`mb-3 p-2 rounded ${
+                    entry.speaker === "chatbot" ? "bg-blue-100" : "bg-green-100"
+                  }`}
+                >
+                  <div className="font-semibold text-sm text-gray-600 mb-1">
+                    {entry.step} 단계 - {entry.turn}턴
+                    {entry.speaker === "chatbot" ? " 🤖" : " 👤"}
+                  </div>
+                  <div className="text-sm text-gray-800 whitespace-pre-wrap">
+                    {displayMessage}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {error && <p className="error mt-4">{error}</p>}
 
@@ -184,6 +437,24 @@ export default function Home() {
           {backupInfo && backupInfo.success && (
             <div className="backup-info mb-4 p-3 bg-green-100 border border-green-300 rounded-md">
               ✅ 백업 저장 완료: {backupInfo.filename}
+              {backupInfo.sheets && backupInfo.sheets.success && (
+                <div className="mt-2">
+                  📊{" "}
+                  <a
+                    href={backupInfo.sheets.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-blue-600 hover:text-blue-800 underline"
+                  >
+                    Google Sheets에서 보기
+                  </a>
+                </div>
+              )}
+              {backupInfo.sheets && !backupInfo.sheets.success && (
+                <div className="mt-2 text-yellow-600">
+                  ⚠️ Google Sheets 저장 실패: {backupInfo.sheets.error}
+                </div>
+              )}
             </div>
           )}
           <button

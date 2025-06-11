@@ -1,5 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { AzureOpenAI } from "openai";
+import { saveSimulationToGoogleSheets } from "@/lib/googlesheets";
+
+// Vercel timeout 설정 (5분)
+export const maxDuration = 300;
 
 const openai = new AzureOpenAI({
   apiVersion: process.env.OPENAI_API_VERSION || "2024-08-01-preview",
@@ -149,25 +153,46 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // 백업 정보 (간소화 - 실제 파일 저장 대신 메모리에만)
+    // 시뮬레이션 요약 정보
+    const summary = {
+      totalSteps: conversationSteps.length,
+      totalTurns: conversation.length,
+      completedSteps: conversationSteps.filter((step) =>
+        conversation.some((entry) => entry.step === step)
+      ).length,
+    };
+
+    // Google Sheets에 저장 시도
+    const timestamp = new Date().toISOString();
+    let sheetsResult = null;
+
+    try {
+      sheetsResult = await saveSimulationToGoogleSheets({
+        conversation,
+        summary,
+        timestamp,
+        prompts: {
+          chatbotSystemPrompt,
+          userPersonaPrompt,
+          stepPrompts,
+        },
+      });
+    } catch (error: any) {
+      console.error("Google Sheets 저장 실패:", error);
+    }
+
+    // 백업 정보
     const backupInfo = {
       success: true,
-      filename: `simulation-backup-${new Date()
-        .toISOString()
-        .replace(/[:.]/g, "-")}.json`,
-      timestamp: new Date().toISOString(),
+      filename: `simulation-backup-${timestamp.replace(/[:.]/g, "-")}.json`,
+      timestamp,
+      sheets: sheetsResult,
     };
 
     return NextResponse.json({
       conversation,
       backup: backupInfo,
-      summary: {
-        totalSteps: conversationSteps.length,
-        totalTurns: conversation.length,
-        completedSteps: conversationSteps.filter((step) =>
-          conversation.some((entry) => entry.step === step)
-        ).length,
-      },
+      summary,
     });
   } catch (error: any) {
     console.error("시뮬레이션 오류:", error);
