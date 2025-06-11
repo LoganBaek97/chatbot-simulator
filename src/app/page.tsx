@@ -78,7 +78,6 @@ export default function Home() {
   const [useStreaming, setUseStreaming] = useState(true);
   const streamContainerRef = useRef<HTMLDivElement>(null);
 
-  // 스트리밍 데이터가 업데이트될 때마다 자동 스크롤
   useEffect(() => {
     if (streamContainerRef.current) {
       streamContainerRef.current.scrollTop =
@@ -431,12 +430,21 @@ export default function Home() {
         </p>
       )}
 
+      {/* 결과가 없을 때 안내 메시지 */}
+      {!result && !isLoading && (
+        <div className="mt-6 p-4 bg-gray-50 border border-gray-200 rounded-md text-center">
+          <p className="text-gray-600">
+            시뮬레이션을 먼저 실행하시면 결과를 Google Sheets에 저장할 수
+            있습니다.
+          </p>
+        </div>
+      )}
+
       {result && result.length > 0 && (
         <div className="result-section">
           <h2 className="text-2xl font-bold mb-4">📝 시뮬레이션 결과</h2>
           {backupInfo && backupInfo.success && (
             <div className="backup-info mb-4 p-3 bg-green-100 border border-green-300 rounded-md">
-              ✅ 백업 저장 완료: {backupInfo.filename}
               {backupInfo.sheets && backupInfo.sheets.success && (
                 <div className="mt-2">
                   📊{" "}
@@ -457,12 +465,15 @@ export default function Home() {
               )}
             </div>
           )}
-          <button
-            onClick={handleDownload}
-            className="mb-4 py-2 px-4 bg-green-600 text-white rounded-md hover:bg-green-700"
-          >
-            결과 다운로드 (JSON)
-          </button>
+          <div className="mb-4 flex gap-3">
+            <button
+              onClick={handleDownload}
+              className="py-2 px-4 bg-green-600 text-white rounded-md hover:bg-green-700"
+            >
+              📥 결과 다운로드 (JSON)
+            </button>
+          </div>
+
           <div className="chat-log">
             {result.map((entry: any, index: number) => {
               let displayMessage;

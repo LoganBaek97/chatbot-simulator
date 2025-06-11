@@ -15,6 +15,106 @@ function getGoogleSheetsClient() {
   return google.sheets({ version: "v4", auth });
 }
 
+// 요약 시트가 존재하는지 확인하고 없으면 생성하는 함수
+async function ensureSummarySheetExists(sheets: any, spreadsheetId: string) {
+  try {
+    // 요약 시트가 있는지 확인
+    await sheets.spreadsheets.values.get({
+      spreadsheetId,
+      range: "시뮬레이션 요약!A1",
+    });
+    console.log("시뮬레이션 요약 시트가 이미 존재합니다.");
+  } catch (error: any) {
+    console.log("시뮬레이션 요약 시트가 없습니다. 생성하는 중...");
+
+    try {
+      // 요약 시트 생성
+      await sheets.spreadsheets.batchUpdate({
+        spreadsheetId,
+        requestBody: {
+          requests: [
+            {
+              addSheet: {
+                properties: {
+                  title: "시뮬레이션 요약",
+                },
+              },
+            },
+          ],
+        },
+      });
+
+      // 헤더 추가
+      await sheets.spreadsheets.values.update({
+        spreadsheetId,
+        range: "시뮬레이션 요약!A1:F1",
+        valueInputOption: "USER_ENTERED",
+        requestBody: {
+          values: [
+            ["생성일시", "총 단계", "총 턴", "완료 단계", "상태", "시트명"],
+          ],
+        },
+      });
+
+      console.log("시뮬레이션 요약 시트를 성공적으로 생성했습니다.");
+    } catch (createError: any) {
+      // 시트가 이미 존재하거나 다른 오류 처리
+      if (createError.message.includes("already exists")) {
+        console.log("시트가 이미 존재합니다 (동시 생성 시도).");
+      } else {
+        console.error("시뮬레이션 요약 시트 생성 실패:", createError.message);
+        throw createError;
+      }
+    }
+  }
+}
+
+// 개별 시뮬레이션 시트가 존재하는지 확인하고 없으면 생성하는 함수
+async function ensureSimulationSheetExists(
+  sheets: any,
+  spreadsheetId: string,
+  sheetName: string
+) {
+  try {
+    // 시트가 있는지 확인
+    await sheets.spreadsheets.values.get({
+      spreadsheetId,
+      range: `${sheetName}!A1`,
+    });
+    console.log(`시트 "${sheetName}"가 이미 존재합니다.`);
+  } catch (error: any) {
+    console.log(`시트 "${sheetName}"가 없습니다. 생성하는 중...`);
+
+    try {
+      // 새 시트 생성
+      await sheets.spreadsheets.batchUpdate({
+        spreadsheetId,
+        requestBody: {
+          requests: [
+            {
+              addSheet: {
+                properties: {
+                  title: sheetName,
+                },
+              },
+            },
+          ],
+        },
+      });
+
+      console.log(`시트 "${sheetName}"를 성공적으로 생성했습니다.`);
+    } catch (createError: any) {
+      // 시트가 이미 존재하거나 다른 오류 처리
+      if (createError.message.includes("already exists")) {
+        console.log(`시트 "${sheetName}"가 이미 존재합니다 (동시 생성 시도).`);
+      } else {
+        console.error(`시트 "${sheetName}" 생성 실패:`, createError.message);
+        throw createError;
+      }
+    }
+  }
+}
+
 // 시뮬레이션 결과를 Google Sheets에 저장하는 함수
 export async function saveSimulationToGoogleSheets(simulationData: {
   conversation: any[];
@@ -48,6 +148,9 @@ export async function saveSimulationToGoogleSheets(simulationData: {
       `시뮬레이션-${simulationData.timestamp.split("T")[0]}`,
     ];
 
+    // 요약 시트 확인 및 생성
+    await ensureSummarySheetExists(sheets, spreadsheetId);
+
     // 요약 시트에 데이터 추가
     await sheets.spreadsheets.values.append({
       spreadsheetId,
@@ -63,28 +166,8 @@ export async function saveSimulationToGoogleSheets(simulationData: {
       simulationData.timestamp.split("T")[1].split(":")[0]
     }${simulationData.timestamp.split("T")[1].split(":")[1]}`;
 
-    // 새 시트 생성
-    try {
-      await sheets.spreadsheets.batchUpdate({
-        spreadsheetId,
-        requestBody: {
-          requests: [
-            {
-              addSheet: {
-                properties: {
-                  title: sheetName,
-                },
-              },
-            },
-          ],
-        },
-      });
-    } catch (error: any) {
-      // 시트가 이미 존재하면 무시
-      if (!error.message.includes("already exists")) {
-        throw error;
-      }
-    }
+    // 개별 시뮬레이션 시트 생성
+    await ensureSimulationSheetExists(sheets, spreadsheetId, sheetName);
 
     // 헤더 행 추가
     const headers = ["단계", "턴", "화자", "메시지", "시간"];
