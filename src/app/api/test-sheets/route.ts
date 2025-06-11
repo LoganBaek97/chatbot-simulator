@@ -9,20 +9,6 @@ function getGoogleSheetsClient() {
   }
 
   try {
-    // 환경변수 값 정리 - 키 이름이 포함된 경우 제거
-    if (credentials.startsWith("GOOGLE_SERVICE_ACCOUNT_KEY=")) {
-      credentials = credentials.replace("GOOGLE_SERVICE_ACCOUNT_KEY=", "");
-    }
-
-    // 앞뒤 공백 및 따옴표 제거
-    credentials = credentials.trim();
-    if (credentials.startsWith('"') && credentials.endsWith('"')) {
-      credentials = credentials.slice(1, -1);
-    }
-    if (credentials.startsWith("'") && credentials.endsWith("'")) {
-      credentials = credentials.slice(1, -1);
-    }
-
     // 이스케이프된 따옴표를 실제 따옴표로 변환
     credentials = credentials.replace(/\\"/g, '"');
 
