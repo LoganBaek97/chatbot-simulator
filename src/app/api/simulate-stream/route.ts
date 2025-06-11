@@ -87,8 +87,20 @@ export async function POST(request: NextRequest) {
 
         // 진행 상황을 실시간으로 전송
         const sendUpdate = (data: any) => {
-          const chunk = `data: ${JSON.stringify(data)}\n\n`;
-          controller.enqueue(new TextEncoder().encode(chunk));
+          try {
+            const jsonString = JSON.stringify(data);
+            const chunk = `data: ${jsonString}\n\n`;
+            controller.enqueue(new TextEncoder().encode(chunk));
+          } catch (error) {
+            console.error("JSON 직렬화 오류:", error);
+            // 직렬화 오류가 발생하면 에러 정보만 전송
+            const errorChunk = `data: ${JSON.stringify({
+              type: "error",
+              error: "데이터 직렬화 오류",
+              timestamp: new Date().toISOString(),
+            })}\n\n`;
+            controller.enqueue(new TextEncoder().encode(errorChunk));
+          }
         };
 
         sendUpdate({

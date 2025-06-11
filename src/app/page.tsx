@@ -154,17 +154,38 @@ export default function Home() {
         throw new Error("스트림 리더를 가져올 수 없습니다.");
       }
 
+      let buffer = ""; // 불완전한 JSON을 저장할 버퍼
+
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
 
         const chunk = decoder.decode(value);
-        const lines = chunk.split("\n");
+        buffer += chunk;
+
+        const lines = buffer.split("\n");
+
+        // 마지막 라인은 불완전할 수 있으므로 버퍼에 보관
+        buffer = lines.pop() || "";
 
         for (const line of lines) {
           if (line.startsWith("data: ")) {
             try {
-              const data = JSON.parse(line.slice(6));
+              const jsonString = line.slice(6).trim();
+
+              // 빈 문자열 체크
+              if (!jsonString) continue;
+
+              // JSON 문자열이 완전한지 간단히 체크
+              if (!jsonString.startsWith("{") || !jsonString.endsWith("}")) {
+                console.warn(
+                  "불완전한 JSON 라인 무시:",
+                  jsonString.substring(0, 100)
+                );
+                continue;
+              }
+
+              const data = JSON.parse(jsonString);
 
               switch (data.type) {
                 case "start":
@@ -227,6 +248,11 @@ export default function Home() {
               }
             } catch (parseError) {
               console.error("JSON 파싱 오류:", parseError);
+              console.error(
+                "파싱 실패한 라인:",
+                line.substring(0, 200) + "..."
+              );
+              // JSON 파싱 오류는 로그만 남기고 계속 진행
             }
           }
         }
@@ -238,6 +264,8 @@ export default function Home() {
       setIsLoading(false);
     }
   };
+
+  console.log({ currentStatus });
 
   const handleSimulate = () => {
     // 기본 유효성 검사
@@ -412,32 +440,94 @@ export default function Home() {
             className="max-h-96 overflow-y-auto border border-gray-300 rounded-md p-3 bg-gray-50 scroll-smooth"
           >
             {streamingData.map((entry: any, index: number) => {
+              // 디버그 데이터가 있으면 사용, 없으면 기존 로직
+              const dataToDisplay = entry.displayData || entry.message;
+              // console.log(entry);
+
               let displayMessage;
+              let debugInfo = null;
+
               if (
-                typeof entry.message === "object" &&
-                entry.message.response_to_user
+                entry.speaker === "chatbot" &&
+                typeof dataToDisplay === "object"
               ) {
-                displayMessage = entry.message.response_to_user;
-              } else if (typeof entry.message === "string") {
-                displayMessage = entry.message;
+                displayMessage =
+                  dataToDisplay.response_to_user ||
+                  JSON.stringify(dataToDisplay);
+
+                // 디버그 정보가 있으면 표시
+                if (
+                  dataToDisplay.reasoning ||
+                  dataToDisplay.is_step_complete !== undefined
+                ) {
+                  debugInfo = {
+                    reasoning: dataToDisplay.reasoning,
+                    is_step_complete: dataToDisplay.is_step_complete,
+                  };
+                }
+              } else if (typeof dataToDisplay === "string") {
+                displayMessage = dataToDisplay;
               } else {
-                displayMessage = JSON.stringify(entry.message);
+                displayMessage = JSON.stringify(dataToDisplay);
               }
 
               return (
                 <div
                   key={index}
-                  className={`mb-3 p-2 rounded ${
-                    entry.speaker === "chatbot" ? "bg-blue-100" : "bg-green-100"
+                  className={`mb-3 p-3 rounded border ${
+                    entry.speaker === "chatbot"
+                      ? "bg-blue-50 border-blue-200"
+                      : "bg-green-50 border-green-200"
                   }`}
                 >
-                  <div className="font-semibold text-sm text-gray-600 mb-1">
+                  <div className="font-semibold text-sm text-gray-600 mb-2">
                     {entry.step} 단계 - {entry.turn}턴
                     {entry.speaker === "chatbot" ? " 🤖" : " 👤"}
                   </div>
-                  <div className="text-sm text-gray-800 whitespace-pre-wrap">
+
+                  {/* 사용자에게 보이는 메시지 */}
+                  <div className="text-sm text-gray-800 whitespace-pre-wrap mb-2">
                     {displayMessage}
                   </div>
+
+                  {/* 디버그 정보 (챗봇 응답에만 표시) */}
+                  {debugInfo && (
+                    <div className="mt-3 p-2 bg-gray-100 border border-gray-300 rounded text-xs">
+                      <div className="font-medium text-gray-700 mb-1">
+                        🔍 디버그 정보:
+                      </div>
+
+                      {debugInfo.reasoning && (
+                        <div className="mb-2">
+                          <span className="font-medium text-purple-700">
+                            추론 과정:
+                          </span>
+                          <div className="text-gray-600 mt-1 whitespace-pre-wrap">
+                            {debugInfo.reasoning}
+                          </div>
+                        </div>
+                      )}
+
+                      {debugInfo.is_step_complete !== undefined && (
+                        <div>
+                          <span className="font-medium text-orange-700">
+                            단계 완료 여부:
+                          </span>
+                          <span
+                            className={`ml-2 px-2 py-1 rounded ${
+                              debugInfo.is_step_complete
+                                ? "bg-green-200 text-green-800"
+                                : "bg-yellow-200 text-yellow-800"
+                            }`}
+                          >
+                            {debugInfo.is_step_complete
+                              ? "✅ 완료"
+                              : "⏳ 진행중"}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               );
             })}
@@ -490,11 +580,26 @@ export default function Home() {
           <div className="chat-log">
             {result.map((entry: any, index: number) => {
               let displayMessage;
+              let debugInfo = null;
+
               if (
-                typeof entry.message === "object" &&
-                entry.message.response_to_user
+                entry.speaker === "chatbot" &&
+                typeof entry.message === "object"
               ) {
-                displayMessage = entry.message.response_to_user;
+                displayMessage =
+                  entry.message.response_to_user ||
+                  JSON.stringify(entry.message);
+
+                // 디버그 정보가 있으면 표시
+                if (
+                  entry.message.reasoning ||
+                  entry.message.is_step_complete !== undefined
+                ) {
+                  debugInfo = {
+                    reasoning: entry.message.reasoning,
+                    is_step_complete: entry.message.is_step_complete,
+                  };
+                }
               } else if (typeof entry.message === "string") {
                 displayMessage = entry.message;
               } else {
@@ -507,10 +612,52 @@ export default function Home() {
                     {entry.step} 단계 - {entry.turn}턴
                     {entry.speaker === "chatbot" ? "🤖" : "🧑‍💻"}
                   </div>
-                  <div className="whitespace-pre-wrap text-black">
+
+                  {/* 사용자에게 보이는 메시지 */}
+                  <div className="whitespace-pre-wrap text-black mb-2">
                     {displayMessage}
                   </div>
-                  <div className="text-xs text-gray-500 mt-1">
+
+                  {/* 디버그 정보 (챗봇 응답에만 표시) */}
+                  {debugInfo && (
+                    <div className="mt-3 p-3 bg-gray-100 border border-gray-300 rounded text-sm">
+                      <div className="font-medium text-gray-700 mb-2">
+                        🔍 디버그 정보:
+                      </div>
+
+                      {debugInfo.reasoning && (
+                        <div className="mb-3">
+                          <span className="font-medium text-purple-700">
+                            추론 과정:
+                          </span>
+                          <div className="text-gray-600 mt-1 whitespace-pre-wrap">
+                            {debugInfo.reasoning}
+                          </div>
+                        </div>
+                      )}
+
+                      {debugInfo.is_step_complete !== undefined && (
+                        <div>
+                          <span className="font-medium text-orange-700">
+                            단계 완료 여부:
+                          </span>
+                          <span
+                            className={`ml-2 px-2 py-1 rounded ${
+                              debugInfo.is_step_complete
+                                ? "bg-green-200 text-green-800"
+                                : "bg-yellow-200 text-yellow-800"
+                            }`}
+                          >
+                            {debugInfo.is_step_complete
+                              ? "✅ 완료"
+                              : "⏳ 진행중"}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  <div className="text-xs text-gray-500 mt-2">
                     {new Date(entry.timestamp).toLocaleString("ko-KR")}
                   </div>
                 </div>
