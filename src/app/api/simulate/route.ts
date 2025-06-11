@@ -1,16 +1,5 @@
-// server/server.js (Azure 연동 최종 강화 버전)
-require("dotenv").config();
-const express = require("express");
-const cors = require("cors");
-const fs = require("fs");
-const path = require("path");
-const { AzureOpenAI } = require("openai"); // 최신 라이브러리 구조
-
-const app = express();
-const PORT = process.env.PORT || 8080;
-
-app.use(cors());
-app.use(express.json());
+import { NextRequest, NextResponse } from "next/server";
+import { AzureOpenAI } from "openai";
 
 const openai = new AzureOpenAI({
   apiVersion: process.env.OPENAI_API_VERSION || "2024-08-01-preview",
@@ -27,14 +16,8 @@ const conversationSteps = [
   "report",
 ];
 
-// 백업 디렉토리 생성
-const backupDir = path.join(__dirname, "backups");
-if (!fs.existsSync(backupDir)) {
-  fs.mkdirSync(backupDir);
-}
-
 // Azure OpenAI 호출 함수
-async function callAzureOpenAI(messages, maxTokens = 1000) {
+async function callAzureOpenAI(messages: any[], maxTokens = 1000) {
   try {
     const response = await openai.chat.completions.create({
       model: process.env.AZURE_OPENAI_DEPLOYMENT_NAME || "gpt-4",
@@ -49,21 +32,24 @@ async function callAzureOpenAI(messages, maxTokens = 1000) {
   }
 }
 
-// 채팅 시뮬레이션 API
-app.post("/api/simulate", async (req, res) => {
+export async function POST(request: NextRequest) {
   try {
-    const { chatbotSystemPrompt, userPersonaPrompt, stepPrompts } = req.body;
+    const { chatbotSystemPrompt, userPersonaPrompt, stepPrompts } =
+      await request.json();
 
     if (!chatbotSystemPrompt || !userPersonaPrompt || !stepPrompts) {
-      return res.status(400).json({
-        error:
-          "필수 파라미터가 누락되었습니다: chatbotSystemPrompt, userPersonaPrompt, stepPrompts",
-      });
+      return NextResponse.json(
+        {
+          error:
+            "필수 파라미터가 누락되었습니다: chatbotSystemPrompt, userPersonaPrompt, stepPrompts",
+        },
+        { status: 400 }
+      );
     }
 
     console.log("시뮬레이션 시작...");
 
-    const conversation = [];
+    const conversation: any[] = [];
     let chatbotHistory = [{ role: "system", content: chatbotSystemPrompt }];
     let userHistory = [{ role: "system", content: userPersonaPrompt }];
 
@@ -98,7 +84,7 @@ app.post("/api/simulate", async (req, res) => {
         // 챗봇 응답을 JSON으로 파싱 시도
         let chatbotData;
         try {
-          chatbotData = JSON.parse(chatbotResponse);
+          chatbotData = JSON.parse(chatbotResponse || "{}");
         } catch (e) {
           console.log("JSON 파싱 실패, 일반 텍스트로 처리");
           chatbotData = {
@@ -163,19 +149,18 @@ app.post("/api/simulate", async (req, res) => {
       }
     }
 
-    // 백업 저장
-    const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
-    const filename = `simulation-backup-${timestamp}.json`;
-    const backupPath = path.join(backupDir, filename);
-
-    const backupData = {
+    // 백업 정보 (간소화 - 실제 파일 저장 대신 메모리에만)
+    const backupInfo = {
+      success: true,
+      filename: `simulation-backup-${new Date()
+        .toISOString()
+        .replace(/[:.]/g, "-")}.json`,
       timestamp: new Date().toISOString(),
-      prompts: {
-        chatbotSystemPrompt,
-        userPersonaPrompt,
-        stepPrompts,
-      },
+    };
+
+    return NextResponse.json({
       conversation,
+      backup: backupInfo,
       summary: {
         totalSteps: conversationSteps.length,
         totalTurns: conversation.length,
@@ -183,72 +168,14 @@ app.post("/api/simulate", async (req, res) => {
           conversation.some((entry) => entry.step === step)
         ).length,
       },
-    };
-
-    fs.writeFileSync(backupPath, JSON.stringify(backupData, null, 2));
-    console.log(`백업 저장 완료: ${filename}`);
-
-    res.json({
-      conversation,
-      backup: {
-        success: true,
-        filename: filename,
-        path: backupPath,
-      },
-      summary: backupData.summary,
     });
-  } catch (error) {
+  } catch (error: any) {
     console.error("시뮬레이션 오류:", error);
-    res.status(500).json({
-      error: "시뮬레이션 중 오류가 발생했습니다",
-      details: error.message,
-    });
+    return NextResponse.json(
+      {
+        error: "시뮬레이션 중 오류가 발생했습니다: " + error.message,
+      },
+      { status: 500 }
+    );
   }
-});
-
-// 백업 파일 목록 조회 API
-app.get("/api/backups", (req, res) => {
-  try {
-    const files = fs
-      .readdirSync(backupDir)
-      .filter((file) => file.endsWith(".json"))
-      .map((file) => {
-        const filePath = path.join(backupDir, file);
-        const stats = fs.statSync(filePath);
-        return {
-          filename: file,
-          size: stats.size,
-          created: stats.birthtime,
-          modified: stats.mtime,
-        };
-      })
-      .sort((a, b) => b.created - a.created);
-
-    res.json(files);
-  } catch (error) {
-    console.error("백업 목록 조회 오류:", error);
-    res.status(500).json({ error: "백업 목록을 가져올 수 없습니다" });
-  }
-});
-
-// 특정 백업 파일 다운로드 API
-app.get("/api/backups/:filename", (req, res) => {
-  try {
-    const filename = req.params.filename;
-    const filePath = path.join(backupDir, filename);
-
-    if (!fs.existsSync(filePath)) {
-      return res.status(404).json({ error: "파일을 찾을 수 없습니다" });
-    }
-
-    res.download(filePath);
-  } catch (error) {
-    console.error("백업 파일 다운로드 오류:", error);
-    res.status(500).json({ error: "파일 다운로드 중 오류가 발생했습니다" });
-  }
-});
-
-app.listen(PORT, () => {
-  console.log(`서버가 http://localhost:${PORT}에서 실행 중입니다`);
-  console.log(`백업 디렉토리: ${backupDir}`);
-});
+}

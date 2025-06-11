@@ -1,16 +1,28 @@
 {
   "name": "chatbot-simulator",
-  "version": "1.0.0",
-  "description": "Chatbot simulation application with React frontend and Express backend",
+  "version": "0.1.0",
+  "private": true,
   "scripts": {
-    "build": "cd client && npm run build",
-    "start": "cd server && npm start",
-    "dev": "concurrently \"cd server && node server.js\" \"cd client && npm run dev\"",
-    "install-all": "cd client && npm install && cd ../server && npm install"
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint"
   },
-  "author": "",
-  "license": "ISC",
+  "dependencies": {
+    "react": "^18",
+    "react-dom": "^18",
+    "next": "14.2.16",
+    "openai": "^5.2.0"
+  },
   "devDependencies": {
-    "concurrently": "^8.2.2"
+    "typescript": "^5",
+    "@types/node": "^20",
+    "@types/react": "^18",
+    "@types/react-dom": "^18",
+    "postcss": "^8",
+    "tailwindcss": "^3.4.1",
+    "autoprefixer": "^10.0.1",
+    "eslint": "^8",
+    "eslint-config-next": "14.2.16"
   }
 }

@@ -1,0 +1,90 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --foreground-rgb: 0, 0, 0;
+  --background-start-rgb: 214, 219, 220;
+  --background-end-rgb: 255, 255, 255;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --foreground-rgb: 255, 255, 255;
+    --background-start-rgb: 0, 0, 0;
+    --background-end-rgb: 0, 0, 0;
+  }
+}
+
+body {
+  color: rgb(var(--foreground-rgb));
+  background: linear-gradient(
+      to bottom,
+      transparent,
+      rgb(var(--background-end-rgb))
+    )
+    rgb(var(--background-start-rgb));
+}
+
+.container {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 2rem;
+}
+
+.prompt-section-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+  gap: 1rem;
+  margin: 2rem 0;
+}
+
+.prompt-input {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.prompt-input.full-width {
+  grid-column: 1 / -1;
+}
+
+.result-section {
+  margin-top: 2rem;
+  padding: 1rem;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+}
+
+.chat-log {
+  max-height: 600px;
+  overflow-y: auto;
+  border: 1px solid #ccc;
+  padding: 1rem;
+  margin-top: 1rem;
+  background-color: #f9f9f9;
+}
+
+.chat-entry {
+  margin-bottom: 1rem;
+  padding: 0.5rem;
+  border-radius: 4px;
+}
+
+.chat-entry.chatbot {
+  background-color: #e3f2fd;
+}
+
+.chat-entry.user {
+  background-color: #f3e5f5;
+}
+
+.error {
+  color: red;
+  font-weight: bold;
+}
+
+.info {
+  color: blue;
+  font-style: italic;
+}
