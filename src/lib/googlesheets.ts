@@ -2,17 +2,58 @@ import { google } from "googleapis";
 
 // Google Sheets 클라이언트 초기화
 function getGoogleSheetsClient() {
-  const credentials = process.env.GOOGLE_SERVICE_ACCOUNT_KEY;
+  let credentials = process.env.GOOGLE_SERVICE_ACCOUNT_KEY;
   if (!credentials) {
     throw new Error("Google Service Account 키가 설정되지 않았습니다.");
   }
 
-  const auth = new google.auth.GoogleAuth({
-    credentials: JSON.parse(credentials),
-    scopes: ["https://www.googleapis.com/auth/spreadsheets"],
-  });
+  try {
+    // 환경변수 값 정리 - 키 이름이 포함된 경우 제거
+    if (credentials.startsWith("GOOGLE_SERVICE_ACCOUNT_KEY=")) {
+      credentials = credentials.replace("GOOGLE_SERVICE_ACCOUNT_KEY=", "");
+    }
 
-  return google.sheets({ version: "v4", auth });
+    // 앞뒤 공백 및 따옴표 제거
+    credentials = credentials.trim();
+    if (credentials.startsWith('"') && credentials.endsWith('"')) {
+      credentials = credentials.slice(1, -1);
+    }
+    if (credentials.startsWith("'") && credentials.endsWith("'")) {
+      credentials = credentials.slice(1, -1);
+    }
+
+    // 이스케이프된 따옴표를 실제 따옴표로 변환
+    credentials = credentials.replace(/\\"/g, '"');
+
+    // JSON 파싱 후 private_key의 개행문자 처리
+    const parsedCredentials = JSON.parse(credentials);
+
+    // private_key에서 \\n을 실제 개행문자로 변환
+    if (parsedCredentials.private_key) {
+      parsedCredentials.private_key = parsedCredentials.private_key.replace(
+        /\\n/g,
+        "\n"
+      );
+    }
+
+    const auth = new google.auth.GoogleAuth({
+      credentials: parsedCredentials,
+      scopes: ["https://www.googleapis.com/auth/spreadsheets"],
+    });
+
+    return google.sheets({ version: "v4", auth });
+  } catch (error: any) {
+    console.error("Google Service Account 키 파싱 오류:", error);
+    console.error(
+      "원본 환경변수 값 길이:",
+      process.env.GOOGLE_SERVICE_ACCOUNT_KEY?.length
+    );
+    console.error(
+      "원본 환경변수 시작 부분:",
+      process.env.GOOGLE_SERVICE_ACCOUNT_KEY?.substring(0, 100)
+    );
+    throw new Error(`Google Service Account 키 파싱 실패: ${error.message}`);
+  }
 }
 
 // 요약 시트가 존재하는지 확인하고 없으면 생성하는 함수
@@ -23,10 +64,7 @@ async function ensureSummarySheetExists(sheets: any, spreadsheetId: string) {
       spreadsheetId,
       range: "시뮬레이션 요약!A1",
     });
-    console.log("시뮬레이션 요약 시트가 이미 존재합니다.");
   } catch (error: any) {
-    console.log("시뮬레이션 요약 시트가 없습니다. 생성하는 중...");
-
     try {
       // 요약 시트 생성
       await sheets.spreadsheets.batchUpdate({
@@ -55,12 +93,9 @@ async function ensureSummarySheetExists(sheets: any, spreadsheetId: string) {
           ],
         },
       });
-
-      console.log("시뮬레이션 요약 시트를 성공적으로 생성했습니다.");
     } catch (createError: any) {
       // 시트가 이미 존재하거나 다른 오류 처리
       if (createError.message.includes("already exists")) {
-        console.log("시트가 이미 존재합니다 (동시 생성 시도).");
       } else {
         console.error("시뮬레이션 요약 시트 생성 실패:", createError.message);
         throw createError;
@@ -81,10 +116,7 @@ async function ensureSimulationSheetExists(
       spreadsheetId,
       range: `${sheetName}!A1`,
     });
-    console.log(`시트 "${sheetName}"가 이미 존재합니다.`);
   } catch (error: any) {
-    console.log(`시트 "${sheetName}"가 없습니다. 생성하는 중...`);
-
     try {
       // 새 시트 생성
       await sheets.spreadsheets.batchUpdate({
@@ -101,12 +133,9 @@ async function ensureSimulationSheetExists(
           ],
         },
       });
-
-      console.log(`시트 "${sheetName}"를 성공적으로 생성했습니다.`);
     } catch (createError: any) {
       // 시트가 이미 존재하거나 다른 오류 처리
       if (createError.message.includes("already exists")) {
-        console.log(`시트 "${sheetName}"가 이미 존재합니다 (동시 생성 시도).`);
       } else {
         console.error(`시트 "${sheetName}" 생성 실패:`, createError.message);
         throw createError;
@@ -127,7 +156,6 @@ export async function saveSimulationToGoogleSheets(simulationData: {
   };
 }) {
   if (!process.env.GOOGLE_SHEET_ID || !process.env.GOOGLE_SERVICE_ACCOUNT_KEY) {
-    console.log("Google Sheets 설정이 없어 백업을 건너뜁니다.");
     return null;
   }
 

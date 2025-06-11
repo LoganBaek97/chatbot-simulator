@@ -270,8 +270,6 @@ export default function Home() {
     }
   };
 
-  console.log({ currentStatus });
-
   const handleSimulate = () => {
     // 기본 유효성 검사
     if (!systemPrompt.trim()) {
