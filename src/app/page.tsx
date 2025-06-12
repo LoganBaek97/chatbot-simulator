@@ -82,10 +82,47 @@ export default function Home() {
   const [useStreaming, setUseStreaming] = useState(true);
   const streamContainerRef = useRef<HTMLDivElement>(null);
 
-  // Google Sheets 테스트 관련 상태 추가
-  const [sheetsTestResult, setSheetsTestResult] = useState<any>(null);
-  const [sheetsTestLoading, setSheetsTestLoading] = useState(false);
-  const [sheetsTestError, setSheetsTestError] = useState("");
+  // 저장/복원 상태
+  const [saveStatus, setSaveStatus] = useState<string>("");
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveSuccess, setSaveSuccess] = useState<boolean | null>(null);
+  const [isClearing, setIsClearing] = useState(false);
+  const [clearSuccess, setClearSuccess] = useState<boolean | null>(null);
+
+  // localStorage에서 저장된 값들을 불러오는 useEffect
+  useEffect(() => {
+    try {
+      const savedSystemPrompt = localStorage.getItem(
+        "chatbot-simulator-system-prompt"
+      );
+      const savedUserPersonaPrompt = localStorage.getItem(
+        "chatbot-simulator-user-persona-prompt"
+      );
+      const savedStepPrompts = localStorage.getItem(
+        "chatbot-simulator-step-prompts"
+      );
+
+      if (savedSystemPrompt) {
+        setSystemPrompt(savedSystemPrompt);
+      }
+
+      if (savedUserPersonaPrompt) {
+        setUserPersonaPrompt(savedUserPersonaPrompt);
+      }
+
+      if (savedStepPrompts) {
+        const parsedStepPrompts = JSON.parse(savedStepPrompts);
+        setStepPrompts(parsedStepPrompts);
+      }
+
+      if (savedSystemPrompt || savedUserPersonaPrompt || savedStepPrompts) {
+        setSaveStatus("💾 이전 설정을 복원했습니다");
+        setTimeout(() => setSaveStatus(""), 3000);
+      }
+    } catch (error) {
+      console.error("저장된 설정 복원 중 오류:", error);
+    }
+  }, []);
 
   useEffect(() => {
     if (streamContainerRef.current) {
@@ -96,6 +133,100 @@ export default function Home() {
 
   const handleStepPromptChange = (step: string, value: string) => {
     setStepPrompts((prev: any) => ({ ...prev, [step]: value }));
+  };
+
+  // localStorage에 현재 설정을 저장하는 함수 (시각적 피드백 포함)
+  const saveCurrentSettings = async () => {
+    setIsSaving(true);
+    setSaveSuccess(null);
+
+    try {
+      // 약간의 지연을 추가하여 로딩 상태를 보여줌
+      await new Promise((resolve) => setTimeout(resolve, 500));
+
+      localStorage.setItem("chatbot-simulator-system-prompt", systemPrompt);
+      localStorage.setItem(
+        "chatbot-simulator-user-persona-prompt",
+        userPersonaPrompt
+      );
+      localStorage.setItem(
+        "chatbot-simulator-step-prompts",
+        JSON.stringify(stepPrompts)
+      );
+
+      setSaveSuccess(true);
+      setSaveStatus("✅ 현재 설정이 성공적으로 저장되었습니다!");
+
+      // 성공 상태를 3초간 유지 후 초기화
+      setTimeout(() => {
+        setSaveStatus("");
+        setSaveSuccess(null);
+      }, 3000);
+    } catch (error) {
+      console.error("설정 저장 중 오류:", error);
+      setSaveSuccess(false);
+      setSaveStatus("❌ 설정 저장에 실패했습니다. 다시 시도해주세요.");
+
+      // 실패 상태를 5초간 유지 후 초기화
+      setTimeout(() => {
+        setSaveStatus("");
+        setSaveSuccess(null);
+      }, 5000);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  // localStorage에 현재 설정을 저장하는 함수 (조용히, 시뮬레이션 시작 시 사용)
+  const saveCurrentSettingsQuietly = async () => {
+    try {
+      localStorage.setItem("chatbot-simulator-system-prompt", systemPrompt);
+      localStorage.setItem(
+        "chatbot-simulator-user-persona-prompt",
+        userPersonaPrompt
+      );
+      localStorage.setItem(
+        "chatbot-simulator-step-prompts",
+        JSON.stringify(stepPrompts)
+      );
+    } catch (error) {
+      console.error("설정 자동 저장 중 오류:", error);
+      // 자동 저장 실패는 사용자에게 알리지 않음
+    }
+  };
+
+  // localStorage에서 저장된 설정을 지우는 함수
+  const clearSavedSettings = async () => {
+    setIsClearing(true);
+    setClearSuccess(null);
+
+    try {
+      // 약간의 지연을 추가하여 로딩 상태를 보여줌
+      await new Promise((resolve) => setTimeout(resolve, 300));
+
+      localStorage.removeItem("chatbot-simulator-system-prompt");
+      localStorage.removeItem("chatbot-simulator-user-persona-prompt");
+      localStorage.removeItem("chatbot-simulator-step-prompts");
+
+      setClearSuccess(true);
+      setSaveStatus("🗑️ 저장된 설정이 성공적으로 삭제되었습니다!");
+
+      setTimeout(() => {
+        setSaveStatus("");
+        setClearSuccess(null);
+      }, 3000);
+    } catch (error) {
+      console.error("저장된 설정 삭제 중 오류:", error);
+      setClearSuccess(false);
+      setSaveStatus("❌ 설정 삭제에 실패했습니다. 다시 시도해주세요.");
+
+      setTimeout(() => {
+        setSaveStatus("");
+        setClearSuccess(null);
+      }, 5000);
+    } finally {
+      setIsClearing(false);
+    }
   };
 
   const handleSimulateClassic = async () => {
@@ -274,7 +405,7 @@ export default function Home() {
     }
   };
 
-  const handleSimulate = () => {
+  const handleSimulate = async () => {
     // 기본 유효성 검사
     if (!systemPrompt.trim()) {
       setError("AI 챗봇 시스템 프롬프트를 입력해주세요.");
@@ -294,44 +425,25 @@ export default function Home() {
       }
     }
 
+    // 시뮬레이션 시작 전에 현재 설정 저장 (조용히)
+    try {
+      localStorage.setItem("chatbot-simulator-system-prompt", systemPrompt);
+      localStorage.setItem(
+        "chatbot-simulator-user-persona-prompt",
+        userPersonaPrompt
+      );
+      localStorage.setItem(
+        "chatbot-simulator-step-prompts",
+        JSON.stringify(stepPrompts)
+      );
+    } catch (error) {
+      console.error("설정 자동 저장 중 오류:", error);
+    }
+
     if (useStreaming) {
       handleSimulateStreaming();
     } else {
       handleSimulateClassic();
-    }
-  };
-
-  // Google Sheets 연결 테스트 함수
-  const handleTestGoogleSheets = async (
-    testType: "simple" | "full" = "simple"
-  ) => {
-    setSheetsTestLoading(true);
-    setSheetsTestError("");
-    setSheetsTestResult(null);
-
-    try {
-      const endpoint =
-        testType === "simple" ? "/api/test-sheets" : "/api/test-sheets";
-      const method = testType === "simple" ? "POST" : "GET";
-
-      const response = await fetch(endpoint, {
-        method,
-        headers: {
-          "Content-Type": "application/json",
-        },
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.error || `HTTP 오류! 상태: ${response.status}`);
-      }
-
-      setSheetsTestResult(data);
-    } catch (error: any) {
-      setSheetsTestError(`Google Sheets 테스트 실패: ${error.message}`);
-    } finally {
-      setSheetsTestLoading(false);
     }
   };
 
@@ -392,11 +504,142 @@ export default function Home() {
         ))}
       </div>
 
+      {/* 설정 관리 섹션 */}
+      <div className="mb-4 p-4 bg-gray-50 border border-gray-200 rounded-md">
+        <h3 className="font-medium text-gray-800 mb-3">📁 설정 관리</h3>
+        <div className="flex gap-3 mb-4">
+          <button
+            onClick={saveCurrentSettings}
+            disabled={isLoading || isSaving || saveSuccess === true}
+            className={`py-2 px-4 rounded-md text-white text-sm font-medium transition-all duration-200 flex items-center space-x-2 min-w-[140px] justify-center ${
+              isSaving
+                ? "bg-green-600 cursor-not-allowed"
+                : saveSuccess === true
+                ? "bg-green-600 hover:bg-green-700 transform scale-105"
+                : saveSuccess === false
+                ? "bg-red-600 hover:bg-red-700 animate-pulse"
+                : "bg-green-600 hover:bg-green-700 hover:scale-105"
+            } disabled:opacity-50 disabled:cursor-not-allowed`}
+          >
+            {isSaving ? (
+              <>
+                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                <span>저장 중...</span>
+              </>
+            ) : saveSuccess === true ? (
+              <>
+                <svg
+                  className="w-4 h-4"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M5 13l4 4L19 7"
+                  />
+                </svg>
+                <span>저장 완료</span>
+              </>
+            ) : saveSuccess === false ? (
+              <>
+                <svg
+                  className="w-4 h-4"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M6 18L18 6M6 6l12 12"
+                  />
+                </svg>
+                <span>저장 실패</span>
+              </>
+            ) : (
+              <>
+                <span>💾</span>
+                <span>현재 설정 저장</span>
+              </>
+            )}
+          </button>
+          <button
+            onClick={clearSavedSettings}
+            disabled={
+              isLoading || isSaving || isClearing || clearSuccess === true
+            }
+            className={`py-2 px-4 rounded-md text-white text-sm font-medium transition-all duration-200 flex items-center space-x-2 min-w-[140px] justify-center ${
+              isClearing
+                ? "bg-rose-600 cursor-not-allowed"
+                : clearSuccess === true
+                ? "bg-rose-600 hover:bg-rose-700 transform scale-105"
+                : clearSuccess === false
+                ? "bg-rose-600 hover:bg-rose-700 animate-pulse"
+                : "bg-rose-600 hover:bg-rose-700 hover:scale-105"
+            } disabled:opacity-50 disabled:cursor-not-allowed`}
+          >
+            {isClearing ? (
+              <>
+                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                <span>삭제 중...</span>
+              </>
+            ) : clearSuccess === true ? (
+              <>
+                <svg
+                  className="w-4 h-4"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M5 13l4 4L19 7"
+                  />
+                </svg>
+                <span>삭제 완료</span>
+              </>
+            ) : clearSuccess === false ? (
+              <>
+                <svg
+                  className="w-4 h-4"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M6 18L18 6M6 6l12 12"
+                  />
+                </svg>
+                <span>삭제 실패</span>
+              </>
+            ) : (
+              <>
+                <span>🗑️</span>
+                <span>저장된 설정 삭제</span>
+              </>
+            )}
+          </button>
+        </div>
+        <p className="text-xs text-gray-600">
+          💡 시뮬레이션 시작 시 자동으로 현재 설정이 저장되며, 페이지 새로고침
+          시 복원됩니다.
+        </p>
+      </div>
+
       {/* 스트리밍 모드 선택 */}
       <div className="mb-4 p-4 bg-gray-50 border border-gray-200 rounded-md">
         <div className="flex items-center justify-between">
           <div>
-            <h3 className="font-medium text-gray-800">실행 모드 선택</h3>
+            <h3 className="font-medium text-gray-800">🧿 실행 모드 선택</h3>
             <p className="text-sm text-gray-600">
               {useStreaming
                 ? "🔴 스트리밍 모드: 실시간 진행 상황 확인 가능 (권장)"
