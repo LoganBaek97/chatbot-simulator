@@ -175,7 +175,7 @@ export async function POST(request: NextRequest) {
 
           let stepCompleted = false;
           let turnCount = 0;
-          const maxTurnsPerStep = currentStep === "report" ? 1 : 10;
+          const maxTurnsPerStep = currentStep === "report" ? 1 : Infinity;
 
           while (!stepCompleted && turnCount < maxTurnsPerStep) {
             turnCount++;
@@ -265,7 +265,7 @@ export async function POST(request: NextRequest) {
             const isStepComplete = chatbotData.is_step_complete;
 
             // 2. 사용자 페르소나가 응답 생성
-            const userPrompt = `다음은 AI 상담가가 너에게 한 말이야: "${chatbotData.response_to_user}". 너의 페르소나에 맞게 대답해.`;
+            const userPrompt = `너는 AI 상담가와 채팅을 주고받고 있다. 다음은 AI 상담가가 너에게 한 말이야: "${chatbotData.response_to_user}". 구어체가 아니라 채팅하는 상황에서 할법한 말로 너의 페르소나에 맞게 대답해.`;
 
             // userPrompt 유효성 검사
             if (!userPrompt || userPrompt.trim().length === 0) {

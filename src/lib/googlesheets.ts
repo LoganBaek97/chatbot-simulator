@@ -129,6 +129,103 @@ async function ensureSimulationSheetExists(
   }
 }
 
+// 조건부 서식을 적용하는 함수
+async function applyConditionalFormatting(
+  sheets: any,
+  spreadsheetId: string,
+  sheetName: string,
+  dataRowCount: number
+) {
+  try {
+    // 먼저 시트 ID를 가져와야 합니다
+    const spreadsheetInfo = await sheets.spreadsheets.get({
+      spreadsheetId,
+    });
+
+    const targetSheet = spreadsheetInfo.data.sheets.find(
+      (sheet: any) => sheet.properties.title === sheetName
+    );
+
+    if (!targetSheet) {
+      console.error(`시트 "${sheetName}"을 찾을 수 없습니다.`);
+      return;
+    }
+
+    const sheetId = targetSheet.properties.sheetId;
+
+    // 조건부 서식 규칙 적용 - 화자 컬럼(B열) 기준으로 전체 행 서식 적용
+    await sheets.spreadsheets.batchUpdate({
+      spreadsheetId,
+      requestBody: {
+        requests: [
+          {
+            addConditionalFormatRule: {
+              rule: {
+                ranges: [
+                  {
+                    sheetId: sheetId,
+                    startRowIndex: 1, // 헤더 제외 (0부터 시작하므로 1)
+                    endRowIndex: dataRowCount + 1, // 데이터 행까지
+                    startColumnIndex: 0, // A열부터
+                    endColumnIndex: 6, // F열까지
+                  },
+                ],
+                booleanRule: {
+                  condition: {
+                    type: "CUSTOM_FORMULA",
+                    values: [{ userEnteredValue: '=$B2="사용자"' }],
+                  },
+                  format: {
+                    backgroundColor: {
+                      red: 0.9,
+                      green: 0.95,
+                      blue: 1.0,
+                      alpha: 1.0,
+                    },
+                  },
+                },
+              },
+              index: 0,
+            },
+          },
+          {
+            addConditionalFormatRule: {
+              rule: {
+                ranges: [
+                  {
+                    sheetId: sheetId,
+                    startRowIndex: 1, // 헤더 제외
+                    endRowIndex: dataRowCount + 1, // 데이터 행까지
+                    startColumnIndex: 0, // A열부터
+                    endColumnIndex: 6, // F열까지
+                  },
+                ],
+                booleanRule: {
+                  condition: {
+                    type: "CUSTOM_FORMULA",
+                    values: [{ userEnteredValue: '=$B2="챗봇"' }],
+                  },
+                  format: {
+                    backgroundColor: {
+                      red: 0.95,
+                      green: 1.0,
+                      blue: 0.9,
+                      alpha: 1.0,
+                    },
+                  },
+                },
+              },
+              index: 1,
+            },
+          },
+        ],
+      },
+    });
+  } catch (error: any) {
+    console.error("조건부 서식 적용 중 오류:", error);
+  }
+}
+
 // 시뮬레이션 결과를 Google Sheets에 저장하는 함수
 export async function saveSimulationToGoogleSheets(simulationData: {
   conversation: any[];
@@ -183,10 +280,10 @@ export async function saveSimulationToGoogleSheets(simulationData: {
     await ensureSimulationSheetExists(sheets, spreadsheetId, sheetName);
 
     // 헤더 행 추가
-    const headers = ["단계", "메시지", "추론", "단계완료여부", "시간"];
+    const headers = ["단계", "화자", "메시지", "추론", "단계완료여부", "시간"];
     await sheets.spreadsheets.values.update({
       spreadsheetId,
-      range: `${sheetName}!A1:E1`,
+      range: `${sheetName}!A1:F1`,
       valueInputOption: "USER_ENTERED",
       requestBody: {
         values: [headers],
@@ -198,9 +295,11 @@ export async function saveSimulationToGoogleSheets(simulationData: {
       let message = "";
       let reasoning = "";
       let isStepComplete = "";
+      let speaker = ""; // 화자 정보 추가
 
       if (typeof entry.message === "object" && entry.message.response_to_user) {
         // 챗봇 메시지인 경우 모든 필드 추출
+        speaker = "챗봇";
         message = entry.message.response_to_user;
         reasoning = entry.message.reasoning || "";
         isStepComplete =
@@ -211,11 +310,13 @@ export async function saveSimulationToGoogleSheets(simulationData: {
             : "";
       } else if (typeof entry.message === "string") {
         // 사용자 메시지인 경우
+        speaker = "사용자";
         message = entry.message;
         reasoning = ""; // 사용자 메시지는 추론 없음
         isStepComplete = ""; // 사용자 메시지는 단계완료여부 없음
       } else {
         // 기타 경우
+        speaker = "기타";
         message = JSON.stringify(entry.message);
         reasoning = "";
         isStepComplete = "";
@@ -223,6 +324,7 @@ export async function saveSimulationToGoogleSheets(simulationData: {
 
       return [
         `${entry.step}-${entry.turn}`,
+        speaker,
         message,
         reasoning,
         isStepComplete,
@@ -234,12 +336,20 @@ export async function saveSimulationToGoogleSheets(simulationData: {
     if (conversationRows.length > 0) {
       await sheets.spreadsheets.values.append({
         spreadsheetId,
-        range: `${sheetName}!A:E`,
+        range: `${sheetName}!A:F`,
         valueInputOption: "RAW",
         requestBody: {
           values: conversationRows,
         },
       });
+
+      // 조건부 서식 적용 - 사용자와 챗봇 메시지에 다른 배경색 적용
+      await applyConditionalFormatting(
+        sheets,
+        spreadsheetId,
+        sheetName,
+        conversationRows.length
+      );
     }
 
     // 프롬프트 정보를 별도 섹션에 추가 (등호를 피해서 수식 파싱 오류 방지)
@@ -262,7 +372,7 @@ export async function saveSimulationToGoogleSheets(simulationData: {
     // 프롬프트 데이터 추가 (RAW 옵션으로 수식 파싱 방지)
     await sheets.spreadsheets.values.append({
       spreadsheetId,
-      range: `${sheetName}!A:E`,
+      range: `${sheetName}!A:F`,
       valueInputOption: "RAW",
       requestBody: {
         values: promptData,
