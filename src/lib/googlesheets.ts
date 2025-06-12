@@ -223,7 +223,6 @@ export async function saveSimulationToGoogleSheets(simulationData: {
 
       return [
         `${entry.step}-${entry.turn}`,
-        entry.speaker === "chatbot" ? "🤖 챗봇" : "🧑‍💻 사용자",
         message,
         reasoning,
         isStepComplete,
